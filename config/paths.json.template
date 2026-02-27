@@ -1,0 +1,10 @@
+{
+  "claude_code": {
+    "target_file": "/Users/YOUR_USERNAME/.claude/settings.json",
+    "backup_file": "configs/claude_code/settings.json.bak"
+  },
+  "codex": {
+    "target_file": "/Users/YOUR_USERNAME/.codex/config.json",
+    "backup_file": "configs/codex/config.json.bak"
+  }
+}
