@@ -20,8 +20,8 @@
 ### 1. 克隆项目
 
 ```bash
-git clone <your-repo-url>
-cd AIcoding配置切换器
+git clone https://github.com/Gonghysin/ai-coding-config-switcher.git
+cd ai-coding-config-switcher
 ```
 
 ### 2. 配置 UV 环境
