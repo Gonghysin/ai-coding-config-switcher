@@ -15,6 +15,44 @@
 - **Claude Code** - Anthropic 官方 CLI 工具
 - **Codex** - OpenAI Codex（计划支持）
 
+## 项目目录结构
+
+```
+ai-coding-config-switcher/
+├── .gitignore                   # Git 忽略规则
+├── .python-version              # Python 版本配置
+├── README.md                    # 项目说明文档
+├── pyproject.toml               # UV 项目配置和依赖
+├── uv.lock                      # UV 依赖锁定文件
+├── main.py                      # 程序入口文件
+├── switch_ai_config.py          # 核心切换逻辑
+├── AI-coding配置切换器.sh       # Shell 快捷脚本
+└── configs/                     # 配置文件目录
+    ├── config/                  # 配置切换器本身的配置
+    │   ├── paths.json.template  # 路径配置模板（需复制并填写）
+    │   └── paths.json           # 实际路径配置（不提交到 git）
+    ├── claude_code/             # Claude Code 配置文件
+    │   ├── settings.json.template      # 配置模板
+    │   ├── settings_xxx.json           # 你的配置文件（可多个）
+    │   └── settings.json.bak           # 自动备份文件
+    └── codex/                   # Codex 配置文件（计划支持）
+        ├── config.json.template        # 配置模板
+        └── config_xxx.json             # 你的配置文件（可多个）
+```
+
+### 文件说明
+
+| 文件/目录 | 说明 |
+|----------|------|
+| `switch_ai_config.py` | 主程序，包含配置切换的核心逻辑 |
+| `main.py` | 程序入口，可直接运行 |
+| `AI-coding配置切换器.sh` | Shell 脚本，提供快捷启动方式 |
+| `configs/config/paths.json` | 配置切换器的路径配置，指定各工具的配置文件位置 |
+| `configs/claude_code/` | 存放 Claude Code 的多个配置文件 |
+| `configs/codex/` | 存放 Codex 的多个配置文件 |
+| `.template` 文件 | 配置模板，需复制并填写实际值 |
+| `.bak` 文件 | 自动生成的备份文件 |
+
 ## 安装配置
 
 ### 1. 克隆项目
@@ -148,28 +186,6 @@ uv run python switch_ai_config.py --dry-run
 - `-t, --tool`: 工具名称（claude code / claude / claude_code）
 - `-c, --config`: 配置文件名（相对于工具配置目录）
 - `--dry-run`: 只展示操作，不写入文件
-
-## 项目结构
-
-```
-AIcoding配置切换器/
-├── configs/                     # 所有配置文件
-│   ├── config/                  # 配置切换器本身的配置
-│   │   ├── paths.json.template  # 路径配置模板
-│   │   └── paths.json           # 实际路径配置（不提交到 git）
-│   ├── claude_code/
-│   │   ├── settings.json.template  # Claude Code 配置模板
-│   │   ├── settings_xxx.json       # 你的配置文件
-│   │   └── settings.json.bak       # 自动备份
-│   └── codex/
-│       ├── config.json.template    # Codex 配置模板
-│       └── config_xxx.json         # 你的配置文件
-├── switch_ai_config.py          # 主程序
-├── main.py                      # 入口文件
-├── AI-coding配置切换器.sh       # Shell 脚本
-├── pyproject.toml               # UV 项目配置
-└── README.md                    # 本文件
-```
 
 ## 工作流程
 
