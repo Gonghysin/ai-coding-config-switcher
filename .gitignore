@@ -38,7 +38,7 @@ env/
 Thumbs.db
 
 # Config files (exclude actual config files, keep templates)
-config/paths.json
+configs/config/paths.json
 configs/*/settings*.json
 configs/*/config*.json
 !configs/*/*.template
