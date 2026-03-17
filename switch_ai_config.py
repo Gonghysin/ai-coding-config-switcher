@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -15,6 +16,13 @@ TOOL_DEFS = {
         "config_dir": PROJECT_ROOT / "configs" / "claude_code",
         "target_file": Path("/Users/mac/.claude/settings.json"),
         "backup_file": PROJECT_ROOT / "configs" / "claude_code" / "settings.json.bak",
+        "global_config": PROJECT_ROOT / "configs" / "claude_code" / "global_settings.json",
+    },
+    "opencode": {
+        "config_dir": PROJECT_ROOT / "configs" / "opencode",
+        "target_file": Path.home() / ".config" / "opencode" / "opencode.json",
+        "backup_file": PROJECT_ROOT / "configs" / "opencode" / "opencode.json.bak",
+        "global_config": PROJECT_ROOT / "configs" / "opencode" / "global_settings.json",
     }
 }
 
@@ -25,6 +33,9 @@ def list_candidate_files(config_dir: Path) -> list[Path]:
     files = []
     for p in config_dir.iterdir():
         if not p.is_file():
+            continue
+        # 排除全局配置文件
+        if p.name == "global_settings.json":
             continue
         if p.suffix.lower() in {".json", ".bak"}:
             files.append(p)
@@ -68,6 +79,9 @@ def normalize_tool_name(user_input: str) -> str | None:
         "claude": "claude code",
         "claude code": "claude code",
         "claude_code": "claude code",
+        "opencode": "opencode",
+        "open code": "opencode",
+        "open_code": "opencode",
     }
     return mapping.get(text)
 
@@ -78,6 +92,65 @@ def open_folder_in_finder(folder_path: Path) -> None:
         subprocess.run(["open", str(folder_path)], check=True)
     except subprocess.CalledProcessError as e:
         print(f"警告: 无法打开文件夹: {e}", file=sys.stderr)
+
+
+def deep_merge_dict(base: dict, override: dict) -> dict:
+    """
+    深度合并两个字典，override 中的值会覆盖 base 中的值
+    对于列表类型，会进行合并去重
+    """
+    result = base.copy()
+
+    for key, value in override.items():
+        if key in result:
+            base_value = result[key]
+            # 如果两者都是字典，递归合并
+            if isinstance(base_value, dict) and isinstance(value, dict):
+                result[key] = deep_merge_dict(base_value, value)
+            # 如果两者都是列表，合并并去重
+            elif isinstance(base_value, list) and isinstance(value, list):
+                # 保持顺序，先 base 后 override，去重
+                seen = set()
+                merged = []
+                for item in base_value + value:
+                    if item not in seen:
+                        seen.add(item)
+                        merged.append(item)
+                result[key] = merged
+            else:
+                # 其他情况直接覆盖
+                result[key] = value
+        else:
+            result[key] = value
+
+    return result
+
+
+def load_and_merge_config(selected_file: Path, global_config_file: Path) -> dict:
+    """
+    加载选定的配置文件，并与全局配置合并
+    全局配置优先级更高，会覆盖单个配置中的相同字段
+    """
+    # 加载选定的配置
+    selected_config = json.loads(selected_file.read_text(encoding="utf-8"))
+
+    # 如果全局配置文件不存在，直接返回选定的配置
+    if not global_config_file.exists():
+        print(f"提示: 全局配置文件不存在: {global_config_file}")
+        return selected_config
+
+    # 加载全局配置
+    try:
+        global_config = json.loads(global_config_file.read_text(encoding="utf-8"))
+        print(f"已加载全局配置: {global_config_file}")
+    except Exception as e:
+        print(f"警告: 无法加载全局配置文件: {e}", file=sys.stderr)
+        return selected_config
+
+    # 合并配置：先应用选定配置，再应用全局配置（全局配置优先级更高）
+    merged_config = deep_merge_dict(selected_config, global_config)
+
+    return merged_config
 
 
 def resolve_tool_name(tool_arg: str | None) -> str:
@@ -114,8 +187,10 @@ def resolve_config_file(config_arg: str | None, config_dir: Path) -> Path:
     return config_dir / chosen_name
 
 
-def switch_config(selected_file: Path, target_file: Path, backup_file: Path, dry_run: bool) -> None:
-    selected_data = selected_file.read_bytes()
+def switch_config(selected_file: Path, target_file: Path, backup_file: Path, global_config_file: Path, dry_run: bool) -> None:
+    # 加载并合并配置
+    merged_config = load_and_merge_config(selected_file, global_config_file)
+    merged_data = json.dumps(merged_config, indent=2, ensure_ascii=False).encode("utf-8")
 
     if dry_run:
         print("\n[Dry Run] 将执行以下操作:")
@@ -123,7 +198,10 @@ def switch_config(selected_file: Path, target_file: Path, backup_file: Path, dry
             print(f"  1) 备份: {target_file} -> {backup_file}")
         else:
             print(f"  1) 跳过备份: 目标文件不存在 {target_file}")
-        print(f"  2) 替换: {selected_file} -> {target_file}")
+        print(f"  2) 合并配置: {selected_file} + {global_config_file}")
+        print(f"  3) 替换: 合并后的配置 -> {target_file}")
+        print("\n合并后的配置预览:")
+        print(json.dumps(merged_config, indent=2, ensure_ascii=False))
         return
 
     target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -135,23 +213,23 @@ def switch_config(selected_file: Path, target_file: Path, backup_file: Path, dry
     else:
         print(f"目标文件不存在，跳过备份: {target_file}")
 
-    target_file.write_bytes(selected_data)
-    print(f"已载入配置: {selected_file} -> {target_file}")
+    target_file.write_bytes(merged_data)
+    print(f"已载入配置: {selected_file} + 全局配置 -> {target_file}")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="AI Coding 配置切换器（当前支持 Claude Code）"
+        description="AI Coding 配置切换器（支持 Claude Code、OpenCode）"
     )
     parser.add_argument(
         "-t",
         "--tool",
-        help="工具名称，例如: claude code / claude / claude_code",
+        help="工具名称，例如: claude code / opencode",
     )
     parser.add_argument(
         "-c",
         "--config",
-        help="配置文件名（相对于工具配置目录），例如: settings_580ai.json 或 settings.json.bak",
+        help="配置文件名（相对于工具配置目录），例如: settings_580ai.json 或 opencode_custom.json",
     )
     parser.add_argument(
         "--dry-run",
@@ -171,6 +249,7 @@ def main() -> int:
         config_dir = tool_conf["config_dir"]
         target_file = tool_conf["target_file"]
         backup_file = tool_conf["backup_file"]
+        global_config_file = tool_conf["global_config"]
 
         selected_file = resolve_config_file(args.config, config_dir)
 
@@ -178,6 +257,7 @@ def main() -> int:
             selected_file=selected_file,
             target_file=target_file,
             backup_file=backup_file,
+            global_config_file=global_config_file,
             dry_run=args.dry_run,
         )
         return 0

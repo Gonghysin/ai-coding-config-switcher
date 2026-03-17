@@ -41,7 +41,9 @@ Thumbs.db
 configs/config/paths.json
 configs/*/settings*.json
 configs/*/config*.json
+configs/*/opencode*.json
 !configs/*/*.template
+!configs/*/global_settings.json
 
 # Backup files
 *.bak

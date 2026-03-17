@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_DIR="/Users/mac/PycharmProjects/my_code_repository/AIcoding配置切换器"
+# 获取脚本所在目录（项目根目录）
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY_SCRIPT="switch_ai_config.py"
 
 cd "$PROJECT_DIR"

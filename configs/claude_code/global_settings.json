@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch",
+      "mcp__tavily__tavily_search",
+      "mcp__tavily__tavily_extract",
+      "mcp__tavily__tavily_crawl",
+      "mcp__tavily__tavily_map",
+      "mcp__tavily__tavily_research",
+      "mcp__zai-mcp-server__ui_to_artifact",
+      "mcp__zai-mcp-server__extract_text_from_screenshot",
+      "mcp__zai-mcp-server__diagnose_error_screenshot",
+      "mcp__zai-mcp-server__understand_technical_diagram",
+      "mcp__zai-mcp-server__analyze_data_visualization",
+      "mcp__zai-mcp-server__ui_diff_check",
+      "mcp__zai-mcp-server__analyze_image",
+      "mcp__zai-mcp-server__analyze_video"
+    ]
+  }
+}

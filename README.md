@@ -1,6 +1,6 @@
 # AI Coding 配置切换器
 
-一个用于快速切换不同 AI Coding 工具配置的命令行工具，支持 Claude Code 等多种工具。
+一个用于快速切换不同 AI Coding 工具配置的命令行工具，支持 Claude Code、OpenCode 等多种工具。
 
 ## 功能特性
 
@@ -9,10 +9,12 @@
 - 🎯 支持多种 AI Coding 工具
 - 🖥️ 交互式菜单选择
 - 🔍 Dry-run 模式预览操作
+- 🌐 全局配置合并（权限、MCP 工具等永久配置）
 
 ## 支持的工具
 
 - **Claude Code** - Anthropic 官方 CLI 工具
+- **OpenCode** - 开源 AI 编码 CLI 工具
 - **Codex** - OpenAI Codex（计划支持）
 
 ## 项目目录结构
@@ -33,8 +35,15 @@ ai-coding-config-switcher/
     │   └── paths.json           # 实际路径配置（不提交到 git）
     ├── claude_code/             # Claude Code 配置文件
     │   ├── settings.json.template      # 配置模板
+    │   ├── global_settings.json        # 全局配置（权限等永久配置）
     │   ├── settings_xxx.json           # 你的配置文件（可多个）
     │   └── settings.json.bak           # 自动备份文件
+    ├── opencode/                # OpenCode 配置文件
+    │   ├── opencode.json.template      # 配置模板
+    │   ├── global_settings.json        # 全局配置（权限等永久配置）
+    │   ├── opencode_xxx.json           # 你的配置文件（可多个）
+    │   ├── opencode.json.bak           # 自动备份文件
+    │   └── README.md                   # OpenCode 配置说明
     └── codex/                   # Codex 配置文件（计划支持）
         ├── config.json.template        # 配置模板
         └── config_xxx.json             # 你的配置文件（可多个）
@@ -49,6 +58,7 @@ ai-coding-config-switcher/
 | `AI-coding配置切换器.sh` | Shell 脚本，提供快捷启动方式 |
 | `configs/config/paths.json` | 配置切换器的路径配置，指定各工具的配置文件位置 |
 | `configs/claude_code/` | 存放 Claude Code 的多个配置文件 |
+| `configs/opencode/` | 存放 OpenCode 的多个配置文件 |
 | `configs/codex/` | 存放 Codex 的多个配置文件 |
 | `.template` 文件 | 配置模板，需复制并填写实际值 |
 | `.bak` 文件 | 自动生成的备份文件 |
@@ -156,6 +166,79 @@ cp configs/claude_code/settings.json.template configs/claude_code/settings_my_co
 cp configs/codex/config.json.template configs/codex/config_my_config.json
 ```
 
+#### OpenCode 配置
+
+1. 复制模板文件：
+
+```bash
+cp configs/opencode/opencode.json.template configs/opencode/opencode_my_config.json
+```
+
+2. 编辑配置文件，填入你的配置：
+
+```json
+{
+  "provider": {
+    "anthropic": {
+      "apiKey": "{env:ANTHROPIC_API_KEY}",
+      "baseURL": "https://api.anthropic.com",
+      "timeout": 600000
+    }
+  },
+  "model": "anthropic/claude-sonnet-4-6",
+  "mcp": {
+    "tavily": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.tavily.com/mcp/?tavilyApiKey=YOUR_TAVILY_API_KEY"
+      ]
+    }
+  },
+  "autoupdate": true,
+  "share": "manual"
+}
+```
+
+**注意**：
+- OpenCode 配置文件位于 `~/.config/opencode/opencode.json`
+- 建议使用环境变量 `{env:ANTHROPIC_API_KEY}` 引用 API Key
+- 详细配置说明请查看 `configs/opencode/README.md`
+
+### 5. 设置 Shell 脚本（可选）
+
+为了方便使用，项目提供了一个 Shell 脚本快捷方式。
+
+#### 添加执行权限
+
+```bash
+chmod +x AI-coding配置切换器.sh
+```
+
+#### 创建全局命令（可选）
+
+你可以创建一个软链接，让脚本在任何地方都能使用：
+
+```bash
+# 方式1: 添加到 /usr/local/bin（推荐）
+sudo ln -s "$(pwd)/AI-coding配置切换器.sh" /usr/local/bin/ai-config
+
+# 方式2: 添加到用户 bin 目录
+mkdir -p ~/bin
+ln -s "$(pwd)/AI-coding配置切换器.sh" ~/bin/ai-config
+# 确保 ~/bin 在你的 PATH 中
+
+# 之后就可以在任何地方使用
+ai-config
+```
+
+**脚本说明：**
+- 脚本会自动检测 uv 是否安装
+- 自动切换到项目目录
+- 支持传递所有命令行参数
+- 无需手动指定项目路径（自动识别）
+
 ## 使用方法
 
 ### 基本用法
@@ -173,9 +256,11 @@ uv run python switch_ai_config.py
 ```bash
 # 指定工具
 uv run python switch_ai_config.py -t "claude code"
+uv run python switch_ai_config.py -t "opencode"
 
 # 指定工具和配置文件
 uv run python switch_ai_config.py -t "claude code" -c settings_580ai.json
+uv run python switch_ai_config.py -t "opencode" -c opencode_custom.json
 
 # Dry-run 模式（仅预览，不实际执行）
 uv run python switch_ai_config.py --dry-run
@@ -183,16 +268,89 @@ uv run python switch_ai_config.py --dry-run
 
 ### 参数说明
 
-- `-t, --tool`: 工具名称（claude code / claude / claude_code）
+- `-t, --tool`: 工具名称（claude code / opencode / codex）
 - `-c, --config`: 配置文件名（相对于工具配置目录）
 - `--dry-run`: 只展示操作，不写入文件
 
 ## 工作流程
 
 1. 工具会读取你选择的配置文件
-2. 自动备份当前的配置文件到 `configs/*/xxx.bak`
-3. 将选择的配置文件复制到目标位置
-4. 完成切换
+2. 加载全局配置文件（`global_settings.json`）
+3. 将选择的配置与全局配置合并（全局配置优先级更高）
+4. 自动备份当前的配置文件到 `configs/*/xxx.bak`
+5. 将合并后的配置文件复制到目标位置
+6. 完成切换
+
+## 全局配置功能
+
+### 什么是全局配置？
+
+全局配置文件（`global_settings.json`）用于存放所有配置都需要的永久性设置，例如：
+- 权限配置（`permissions.allow`）
+- MCP 工具白名单
+- 其他通用设置
+
+### 为什么需要全局配置？
+
+当你频繁切换不同的 API 配置时，某些设置（如联网搜索权限）需要在所有配置中保持一致。全局配置可以避免在每个配置文件中重复添加这些设置。
+
+### 如何使用全局配置？
+
+1. 编辑 `configs/claude_code/global_settings.json`：
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch",
+      "mcp__tavily__tavily_search",
+      "mcp__tavily__tavily_extract",
+      "mcp__tavily__tavily_crawl",
+      "mcp__tavily__tavily_map",
+      "mcp__tavily__tavily_research"
+    ]
+  }
+}
+```
+
+2. 创建你的单个配置文件（只包含 API 相关配置）：
+
+```json
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "sk-xxx",
+    "ANTHROPIC_BASE_URL": "https://api.example.com"
+  },
+  "model": "claude-sonnet-4-6"
+}
+```
+
+3. 切换配置时，工具会自动合并两者：
+
+```json
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "sk-xxx",
+    "ANTHROPIC_BASE_URL": "https://api.example.com"
+  },
+  "model": "claude-sonnet-4-6",
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch",
+      "mcp__tavily__tavily_search",
+      ...
+    ]
+  }
+}
+```
+
+### 配置合并规则
+
+- **字典类型**：递归合并，全局配置覆盖单个配置
+- **列表类型**：合并并去重，保持顺序
+- **其他类型**：全局配置直接覆盖
 
 ## 注意事项
 
