@@ -1,0 +1,14 @@
+{
+  "api_url": "",
+  "api_key": "",
+  "models": [
+    {
+      "name": "MiniMax-M2.7",
+      "alias": "M2.7标准版"
+    },
+    {
+      "name": "MiniMax-M2.7-highspeed",
+      "alias": "M2.7极速版"
+    }
+  ]
+}

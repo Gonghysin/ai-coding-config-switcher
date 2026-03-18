@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""
+AI Coding 配置切换器 - 配置切换模块
+支持两级目录结构：提供商 -> 模型
+"""
 from __future__ import annotations
 
 import argparse
@@ -10,32 +14,67 @@ import sys
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+CLAUDE_CODE_CONFIG_DIR = PROJECT_ROOT / "configs" / "claude_code"
 
-TOOL_DEFS = {
-    "claude code": {
-        "config_dir": PROJECT_ROOT / "configs" / "claude_code",
-        "target_file": Path("/Users/mac/.claude/settings.json"),
-        "backup_file": PROJECT_ROOT / "configs" / "claude_code" / "settings.json.bak",
-        "global_config": PROJECT_ROOT / "configs" / "claude_code" / "global_settings.json",
-    },
-    "opencode": {
-        "config_dir": PROJECT_ROOT / "configs" / "opencode",
-        "target_file": Path.home() / ".config" / "opencode" / "opencode.json",
-        "backup_file": PROJECT_ROOT / "configs" / "opencode" / "opencode.json.bak",
-        "global_config": PROJECT_ROOT / "configs" / "opencode" / "global_settings.json",
-    }
-}
+
+def list_providers() -> list[str]:
+    """列出所有提供商"""
+    if not CLAUDE_CODE_CONFIG_DIR.exists():
+        return []
+    providers = []
+    for p in CLAUDE_CODE_CONFIG_DIR.iterdir():
+        if p.is_dir() and not p.name.startswith('.'):
+            providers.append(p.name)
+    return sorted(providers)
+
+
+def list_models(provider: str) -> list[dict]:
+    """列出提供商下的所有模型"""
+    config_file = CLAUDE_CODE_CONFIG_DIR / provider / "config.json"
+    if not config_file.exists():
+        return []
+    config = json.loads(config_file.read_text(encoding="utf-8"))
+    return config.get("models", [])
+
+
+def get_provider_config(provider: str) -> dict:
+    """获取提供商配置"""
+    config_file = CLAUDE_CODE_CONFIG_DIR / provider / "config.json"
+    if not config_file.exists():
+        return {"api_url": "", "api_key": "", "models": []}
+    return json.loads(config_file.read_text(encoding="utf-8"))
+
+
+def generate_settings(provider: str, model_name: str) -> dict:
+    """生成Claude Code的settings.json配置"""
+    config = get_provider_config(provider)
+
+    # 验证模型存在
+    model_exists = any(m["name"] == model_name for m in config.get("models", []))
+    if not model_exists:
+        raise ValueError(f"模型 '{model_name}' 不存在于提供商 '{provider}'")
+
+    settings = {"env": {}}
+
+    if config.get("api_key"):
+        settings["env"]["ANTHROPIC_AUTH_TOKEN"] = config["api_key"]
+    if config.get("api_url"):
+        settings["env"]["ANTHROPIC_BASE_URL"] = config["api_url"]
+
+    settings["env"]["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+    settings["env"]["API_TIMEOUT_MS"] = "600000"
+    settings["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"] = model_name
+
+    return settings
 
 
 def list_candidate_files(config_dir: Path) -> list[Path]:
+    """列出配置目录下的候选文件（旧版兼容）"""
     if not config_dir.exists():
         return []
     files = []
     for p in config_dir.iterdir():
         if not p.is_file():
-            continue
-        # 排除全局配置文件
-        if p.name == "global_settings.json":
             continue
         if p.suffix.lower() in {".json", ".bak"}:
             files.append(p)
@@ -43,11 +82,11 @@ def list_candidate_files(config_dir: Path) -> list[Path]:
 
 
 def pick_from_menu(options: list[str], title: str, allow_open_folder: bool = False, folder_path: Path | None = None) -> str:
+    """从菜单中选择"""
     if not options:
         raise ValueError("没有可选项")
     print(f"\n{title}")
 
-    # 添加打开文件夹选项
     if allow_open_folder and folder_path:
         print(f"  0. 打开配置文件夹（访达）")
 
@@ -61,11 +100,10 @@ def pick_from_menu(options: list[str], title: str, allow_open_folder: bool = Fal
             continue
         choice = int(raw)
 
-        # 处理打开文件夹选项
         if choice == 0 and allow_open_folder and folder_path:
             open_folder_in_finder(folder_path)
             print(f"\n已在访达中打开: {folder_path}")
-            print("请选择配置文件:")
+            print("请选择:")
             continue
 
         if 1 <= choice <= len(options):
@@ -74,6 +112,7 @@ def pick_from_menu(options: list[str], title: str, allow_open_folder: bool = Fal
 
 
 def normalize_tool_name(user_input: str) -> str | None:
+    """标准化工具名称"""
     text = user_input.strip().lower()
     mapping = {
         "claude": "claude code",
@@ -87,84 +126,53 @@ def normalize_tool_name(user_input: str) -> str | None:
 
 
 def open_folder_in_finder(folder_path: Path) -> None:
-    """在访达中打开指定文件夹"""
+    """在访达中打开文件夹"""
     try:
         subprocess.run(["open", str(folder_path)], check=True)
     except subprocess.CalledProcessError as e:
         print(f"警告: 无法打开文件夹: {e}", file=sys.stderr)
 
 
-def deep_merge_dict(base: dict, override: dict) -> dict:
-    """
-    深度合并两个字典，override 中的值会覆盖 base 中的值
-    对于列表类型，会进行合并去重
-    """
-    result = base.copy()
-
-    for key, value in override.items():
-        if key in result:
-            base_value = result[key]
-            # 如果两者都是字典，递归合并
-            if isinstance(base_value, dict) and isinstance(value, dict):
-                result[key] = deep_merge_dict(base_value, value)
-            # 如果两者都是列表，合并并去重
-            elif isinstance(base_value, list) and isinstance(value, list):
-                # 保持顺序，先 base 后 override，去重
-                seen = set()
-                merged = []
-                for item in base_value + value:
-                    if item not in seen:
-                        seen.add(item)
-                        merged.append(item)
-                result[key] = merged
-            else:
-                # 其他情况直接覆盖
-                result[key] = value
-        else:
-            result[key] = value
-
-    return result
+def list_tools() -> list[str]:
+    """列出所有支持的工具"""
+    return ["claude code", "opencode"]
 
 
-def load_and_merge_config(selected_file: Path, global_config_file: Path) -> dict:
-    """
-    加载选定的配置文件，并与全局配置合并
-    全局配置优先级更高，会覆盖单个配置中的相同字段
-    """
-    # 加载选定的配置
-    selected_config = json.loads(selected_file.read_text(encoding="utf-8"))
-
-    # 如果全局配置文件不存在，直接返回选定的配置
-    if not global_config_file.exists():
-        print(f"提示: 全局配置文件不存在: {global_config_file}")
-        return selected_config
-
-    # 加载全局配置
-    try:
-        global_config = json.loads(global_config_file.read_text(encoding="utf-8"))
-        print(f"已加载全局配置: {global_config_file}")
-    except Exception as e:
-        print(f"警告: 无法加载全局配置文件: {e}", file=sys.stderr)
-        return selected_config
-
-    # 合并配置：先应用选定配置，再应用全局配置（全局配置优先级更高）
-    merged_config = deep_merge_dict(selected_config, global_config)
-
-    return merged_config
+def resolve_tool() -> str:
+    """交互式选择工具"""
+    tools = list_tools()
+    return pick_from_menu(tools, "请选择目标 AI Coding 工具:")
 
 
-def resolve_tool_name(tool_arg: str | None) -> str:
-    available = sorted(TOOL_DEFS.keys())
-    if tool_arg:
-        normalized = normalize_tool_name(tool_arg)
-        if not normalized or normalized not in TOOL_DEFS:
-            names = ", ".join(available)
-            raise ValueError(f"不支持的工具: {tool_arg}。当前支持: {names}")
-        return normalized
-    return pick_from_menu(available, "请选择要配置的 AI Coding 工具:")
+def resolve_provider(tool: str) -> str:
+    """交互式选择提供商"""
+    providers = list_providers()
+
+    if not providers:
+        print("错误: 未找到任何提供商配置", file=sys.stderr)
+        print(f"请使用 'ai-config-cli.py add-provider' 命令添加提供商", file=sys.stderr)
+        raise ValueError("没有可用的提供商")
+
+    return pick_from_menu(providers, f"请选择 AI 服务提供商 (工具: {tool}):", allow_open_folder=True, folder_path=CLAUDE_CODE_CONFIG_DIR)
+
+
+def resolve_model(provider: str) -> str:
+    """交互式选择模型"""
+    models = list_models(provider)
+
+    if not models:
+        print(f"错误: 提供商 '{provider}' 下没有配置任何模型", file=sys.stderr)
+        print(f"请使用 'ai-config-cli.py add-model {provider} <模型名>' 添加模型", file=sys.stderr)
+        raise ValueError(f"提供商 '{provider}' 没有可用的模型")
+
+    model_options = [f"{m['name']} ({m.get('alias', m['name'])})" for m in models]
+    selected = pick_from_menu(model_options, f"请选择模型 (提供商: {provider}):")
+    # 提取模型名称
+    return selected.split(" ")[0]
 
 
 def resolve_config_file(config_arg: str | None, config_dir: Path) -> Path:
+    """解析配置文件（旧版兼容）"""
     candidates = list_candidate_files(config_dir)
     if not candidates:
         raise ValueError(f"在 {config_dir} 下没有找到可用配置文件（.json 或 .bak）")
@@ -178,30 +186,28 @@ def resolve_config_file(config_arg: str | None, config_dir: Path) -> Path:
         return selected
 
     names = [p.name for p in candidates]
-    chosen_name = pick_from_menu(
-        names,
-        f"请选择要载入的配置文件（目录: {config_dir}）:",
-        allow_open_folder=True,
-        folder_path=config_dir
-    )
+    chosen_name = pick_from_menu(names, f"请选择要载入的配置文件:", allow_open_folder=True, folder_path=config_dir)
     return config_dir / chosen_name
 
 
-def switch_config(selected_file: Path, target_file: Path, backup_file: Path, global_config_file: Path, dry_run: bool) -> None:
-    # 加载并合并配置
-    merged_config = load_and_merge_config(selected_file, global_config_file)
-    merged_data = json.dumps(merged_config, indent=2, ensure_ascii=False).encode("utf-8")
+def switch_config(provider: str, model_name: str, dry_run: bool) -> None:
+    """切换配置"""
+    target_file = Path.home() / ".claude" / "settings.json"
+    backup_file = CLAUDE_CODE_CONFIG_DIR / provider / "settings.json.bak"
+
+    # 生成配置
+    settings = generate_settings(provider, model_name)
+    settings_data = json.dumps(settings, indent=2, ensure_ascii=False).encode("utf-8")
 
     if dry_run:
         print("\n[Dry Run] 将执行以下操作:")
         if target_file.exists():
             print(f"  1) 备份: {target_file} -> {backup_file}")
         else:
-            print(f"  1) 跳过备份: 目标文件不存在 {target_file}")
-        print(f"  2) 合并配置: {selected_file} + {global_config_file}")
-        print(f"  3) 替换: 合并后的配置 -> {target_file}")
-        print("\n合并后的配置预览:")
-        print(json.dumps(merged_config, indent=2, ensure_ascii=False))
+            print(f"  1) 跳过备份: 目标文件不存在")
+        print(f"  2) 切换: {provider} / {model_name} -> {target_file}")
+        print("\n配置预览:")
+        print(json.dumps(settings, indent=2, ensure_ascii=False))
         return
 
     target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -210,31 +216,45 @@ def switch_config(selected_file: Path, target_file: Path, backup_file: Path, glo
     if target_file.exists():
         shutil.copy2(target_file, backup_file)
         print(f"已备份当前配置到: {backup_file}")
-    else:
-        print(f"目标文件不存在，跳过备份: {target_file}")
 
-    target_file.write_bytes(merged_data)
-    print(f"已载入配置: {selected_file} + 全局配置 -> {target_file}")
+    target_file.write_bytes(settings_data)
+    print(f"已切换配置: {provider} / {model_name} -> {target_file}")
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """构建命令行解析器"""
     parser = argparse.ArgumentParser(
-        description="AI Coding 配置切换器（支持 Claude Code、OpenCode）"
+        description="AI Coding 配置切换器"
     )
     parser.add_argument(
-        "-t",
-        "--tool",
-        help="工具名称，例如: claude code / opencode",
+        "-t", "--tool",
+        help="工具名称（当前仅支持 claude code）",
     )
     parser.add_argument(
-        "-c",
-        "--config",
-        help="配置文件名（相对于工具配置目录），例如: settings_580ai.json 或 opencode_custom.json",
+        "-p", "--provider",
+        help="AI 服务提供商名称",
+    )
+    parser.add_argument(
+        "-m", "--model",
+        help="模型名称",
+    )
+    parser.add_argument(
+        "-c", "--config",
+        help="配置文件名（旧版兼容，相对于工具配置目录）",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="只展示操作，不写入文件",
+    )
+    parser.add_argument(
+        "--list-providers",
+        action="store_true",
+        help="列出所有可用的提供商",
+    )
+    parser.add_argument(
+        "--list-models",
+        help="列出指定提供商下的所有模型",
     )
     return parser
 
@@ -243,24 +263,61 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
-    try:
-        tool_name = resolve_tool_name(args.tool)
-        tool_conf = TOOL_DEFS[tool_name]
-        config_dir = tool_conf["config_dir"]
-        target_file = tool_conf["target_file"]
-        backup_file = tool_conf["backup_file"]
-        global_config_file = tool_conf["global_config"]
-
-        selected_file = resolve_config_file(args.config, config_dir)
-
-        switch_config(
-            selected_file=selected_file,
-            target_file=target_file,
-            backup_file=backup_file,
-            global_config_file=global_config_file,
-            dry_run=args.dry_run,
-        )
+    # 处理列表命令
+    if args.list_providers:
+        providers = list_providers()
+        if not providers:
+            print("暂无提供商配置")
+            return 0
+        print(f"可用的提供商 ({len(providers)}):")
+        for p in providers:
+            models = list_models(p)
+            print(f"  • {p} ({len(models)} 个模型)")
         return 0
+
+    if args.list_models:
+        models = list_models(args.list_models)
+        if not models:
+            print(f"提供商 '{args.list_models}' 暂无模型")
+            return 0
+        print(f"提供商 '{args.list_models}' 的模型 ({len(models)}):")
+        for m in models:
+            alias = f" -> {m.get('alias')}" if m.get('alias') != m['name'] else ""
+            print(f"  • {m['name']}{alias}")
+        return 0
+
+    try:
+        # 确定工具
+        if args.tool:
+            normalized = normalize_tool_name(args.tool)
+            if not normalized or normalized not in ["claude code", "opencode"]:
+                raise ValueError(f"不支持的工具: {args.tool}。当前支持: claude code, opencode")
+            tool = normalized
+        else:
+            tool = resolve_tool()
+
+        # 确定提供商
+        if args.provider:
+            providers = list_providers()
+            if args.provider not in providers:
+                raise ValueError(f"提供商 '{args.provider}' 不存在。可用: {', '.join(providers)}")
+            provider = args.provider
+        else:
+            provider = resolve_provider(tool)
+
+        # 确定模型
+        if args.model:
+            models = list_models(provider)
+            model_names = [m["name"] for m in models]
+            if args.model not in model_names:
+                raise ValueError(f"模型 '{args.model}' 不存在。可用: {', '.join(model_names)}")
+            model_name = args.model
+        else:
+            model_name = resolve_model(provider)
+
+        switch_config(provider=provider, model_name=model_name, dry_run=args.dry_run)
+        return 0
+
     except KeyboardInterrupt:
         print("\n已取消。")
         return 130

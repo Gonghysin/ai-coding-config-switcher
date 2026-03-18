@@ -39,11 +39,12 @@ Thumbs.db
 
 # Config files (exclude actual config files, keep templates)
 configs/config/paths.json
-configs/*/settings*.json
-configs/*/config*.json
-configs/*/opencode*.json
+configs/claude_code/*/config.json
+configs/claude_code/*/settings*.json
+configs/opencode/*/config*.json
 !configs/*/*.template
-!configs/*/global_settings.json
+!configs/claude_code/*/config.json.template
 
 # Backup files
 *.bak
+settings.json.bak
