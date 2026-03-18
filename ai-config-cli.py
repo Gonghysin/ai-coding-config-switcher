@@ -266,6 +266,107 @@ def cmd_set_config(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_edit_provider(args: argparse.Namespace) -> int:
+    """交互式编辑提供商配置"""
+    manager = ProviderManager()
+    provider = args.provider
+
+    if not manager.provider_exists(provider):
+        print(f"错误: 提供商 '{provider}' 不存在", file=sys.stderr)
+        return 1
+
+    config = manager.get_provider_config(provider)
+
+    print(f"\n编辑提供商: {provider}")
+    print("-" * 40)
+
+    # 编辑 API URL
+    current_url = config.get("api_url", "")
+    new_url = input(f"API URL [{current_url}]: ").strip()
+    if new_url:
+        config["api_url"] = new_url
+
+    # 编辑 API Key
+    current_key = config.get("api_key", "")
+    if current_key:
+        current_key_display = current_key[:8] + "..." + current_key[-4:]
+    else:
+        current_key_display = ""
+    new_key = input(f"API Key [{current_key_display}]: ").strip()
+    if new_key:
+        config["api_key"] = new_key
+
+    # 保存配置
+    manager._save_provider_config(provider, config)
+    print(f"\n✓ 已保存提供商配置: {provider}")
+    return 0
+
+
+def cmd_edit_models(args: argparse.Namespace) -> int:
+    """交互式编辑模型列表"""
+    manager = ProviderManager()
+    provider = args.provider
+
+    if not manager.provider_exists(provider):
+        print(f"错误: 提供商 '{provider}' 不存在", file=sys.stderr)
+        return 1
+
+    config = manager.get_provider_config(provider)
+    models = config.get("models", [])
+
+    while True:
+        print(f"\n编辑 {provider} 的模型列表")
+        print("-" * 40)
+
+        if models:
+            print("当前模型:")
+            for i, m in enumerate(models, 1):
+                alias = f" ({m.get('alias', '')})" if m.get('alias') != m['name'] else ""
+                print(f"  {i}. {m['name']}{alias}")
+        else:
+            print("当前模型: (空)")
+
+        print("\n操作:")
+        print("  1. 添加模型")
+        print("  2. 删除模型")
+        print("  3. 返回")
+
+        choice = input("\n请选择操作: ").strip()
+        if choice == "1":
+            model_name = input("模型名称: ").strip()
+            if not model_name:
+                print("模型名称不能为空")
+                continue
+            alias = input(f"别名 (留空使用模型名): ").strip()
+            try:
+                manager.add_model(provider, model_name, alias)
+                config = manager.get_provider_config(provider)
+                models = config.get("models", [])
+            except ValueError as e:
+                print(f"错误: {e}")
+        elif choice == "2":
+            if not models:
+                print("没有模型可删除")
+                continue
+            print("输入模型编号删除 (多个用逗号分隔，如 1,3): ")
+            nums = input().strip()
+            try:
+                indices = [int(n.strip()) - 1 for n in nums.split(",")]
+                for idx in sorted(indices, reverse=True):
+                    if 0 <= idx < len(models):
+                        manager.remove_model(provider, models[idx]["name"])
+                config = manager.get_provider_config(provider)
+                models = config.get("models", [])
+            except ValueError as e:
+                print(f"错误: {e}")
+        elif choice == "3":
+            break
+        else:
+            print("无效选择")
+
+    return 0
+
+
 def cmd_get_config(args: argparse.Namespace) -> int:
     """获取提供商配置"""
     manager = ProviderManager()
@@ -309,6 +410,12 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
+  # 交互式编辑提供商（API URL、API Key）
+  ai-config-cli.py edit-provider minimax
+
+  # 交互式编辑模型列表
+  ai-config-cli.py edit-models minimax
+
   # 添加提供商
   ai-config-cli.py add-provider minimax --api-url https://api.minimaxi.com/anthropic --api-key sk-xxx
 
@@ -328,8 +435,8 @@ def build_parser() -> argparse.ArgumentParser:
   # 列出提供商下的模型
   ai-config-cli.py list-models minimax
 
-  # 设置提供商配置
-  ai-config-cli.py set-config minimax --api-key sk-new-key
+  # 查看提供商配置
+  ai-config-cli.py get-config minimax
 
   # 删除模型
   ai-config-cli.py remove-model minimax MiniMax-M2.1
@@ -395,6 +502,16 @@ def build_parser() -> argparse.ArgumentParser:
     get_config_parser = subparsers.add_parser("get-config", help="查看提供商配置")
     get_config_parser.add_argument("provider", help="提供商名称")
     get_config_parser.set_defaults(func=cmd_get_config)
+
+    # edit-provider (交互式编辑)
+    edit_provider_parser = subparsers.add_parser("edit-provider", help="交互式编辑提供商配置")
+    edit_provider_parser.add_argument("provider", help="提供商名称")
+    edit_provider_parser.set_defaults(func=cmd_edit_provider)
+
+    # edit-models (交互式编辑模型)
+    edit_models_parser = subparsers.add_parser("edit-models", help="交互式编辑模型列表")
+    edit_models_parser.add_argument("provider", help="提供商名称")
+    edit_models_parser.set_defaults(func=cmd_edit_models)
 
     return parser
 
