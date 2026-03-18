@@ -16,6 +16,13 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parent
 CLAUDE_CODE_CONFIG_DIR = PROJECT_ROOT / "configs" / "claude_code"
 
+# 导入 ProviderManager
+import importlib.util
+cli_spec = importlib.util.spec_from_file_location("ai_config_cli", PROJECT_ROOT / "ai-config-cli.py")
+cli_module = importlib.util.module_from_spec(cli_spec)
+cli_spec.loader.exec_module(cli_module)
+ProviderManager = cli_module.ProviderManager
+
 
 def list_providers() -> list[str]:
     """列出所有提供商"""
@@ -81,17 +88,31 @@ def list_candidate_files(config_dir: Path) -> list[Path]:
     return sorted(files, key=lambda p: p.name.lower())
 
 
-def pick_from_menu(options: list[str], title: str, allow_open_folder: bool = False, folder_path: Path | None = None) -> str:
-    """从菜单中选择"""
-    if not options:
+def pick_from_menu(options: list[str], title: str, allow_open_folder: bool = False, folder_path: Path | None = None, extra_options: list[str] | None = None) -> tuple[str, int]:
+    """从菜单中选择，返回 (选项名, 选项索引)"""
+    all_options = list(options)
+    extra_start_idx = len(all_options)
+
+    if extra_options:
+        all_options.extend(extra_options)
+
+    if not all_options:
         raise ValueError("没有可选项")
+
     print(f"\n{title}")
 
     if allow_open_folder and folder_path:
         print(f"  0. 打开配置文件夹（访达）")
 
+    # 显示常规选项
     for idx, item in enumerate(options, start=1):
         print(f"  {idx}. {item}")
+
+    # 显示额外选项
+    if extra_options:
+        print()  # 空行分隔
+        for idx, item in enumerate(extra_options, start=extra_start_idx + 1):
+            print(f"  {idx}. {item}")
 
     while True:
         raw = input("请输入编号: ").strip()
@@ -106,8 +127,8 @@ def pick_from_menu(options: list[str], title: str, allow_open_folder: bool = Fal
             print("请选择:")
             continue
 
-        if 1 <= choice <= len(options):
-            return options[choice - 1]
+        if 1 <= choice <= len(all_options):
+            return all_options[choice - 1], choice
         print("编号超出范围，请重新输入。")
 
 
@@ -138,37 +159,207 @@ def list_tools() -> list[str]:
     return ["claude code", "opencode"]
 
 
+def interactive_add_provider() -> str:
+    """交互式添加提供商"""
+    print("\n" + "=" * 40)
+    print("添加新提供商")
+    print("=" * 40)
+
+    name = input("提供商名称: ").strip()
+    if not name:
+        print("提供商名称不能为空")
+        return ""
+
+    if (CLAUDE_CODE_CONFIG_DIR / name).exists():
+        print(f"提供商 '{name}' 已存在")
+        return name
+
+    api_url = input("API URL (留空跳过): ").strip()
+    api_key = input("API Key (留空跳过): ").strip()
+
+    manager = ProviderManager()
+    manager.add_provider(name, api_url, api_key)
+
+    return name
+
+
+def interactive_edit_provider(provider: str) -> None:
+    """交互式编辑提供商"""
+    print("\n" + "=" * 40)
+    print(f"编辑提供商: {provider}")
+    print("=" * 40)
+
+    manager = ProviderManager()
+    config = manager.get_provider_config(provider)
+
+    current_url = config.get("api_url", "")
+    current_key = config.get("api_key", "")
+
+    new_url = input(f"API URL [{current_url}]: ").strip()
+    new_key = input(f"API Key [{current_key[:8] if current_key else ''}...]: ").strip()
+
+    if new_url or new_key:
+        manager.set_provider_config(provider, new_url or None, new_key or None)
+        print("✓ 已更新配置")
+    else:
+        print("未做任何修改")
+
+
+def interactive_add_model(provider: str) -> str:
+    """交互式添加模型，返回模型名称"""
+    print("\n" + "=" * 40)
+    print(f"添加模型到: {provider}")
+    print("=" * 40)
+
+    model_name = input("模型名称: ").strip()
+    if not model_name:
+        print("模型名称不能为空")
+        return ""
+
+    alias = input(f"别名 (留空使用模型名): ").strip()
+
+    manager = ProviderManager()
+    try:
+        manager.add_model(provider, model_name, alias)
+    except ValueError as e:
+        print(f"错误: {e}")
+
+    return model_name
+
+
+def interactive_delete_provider(provider: str) -> bool:
+    """交互式删除提供商"""
+    confirm = input(f"确定要删除提供商 '{provider}' 吗？(y/N): ").strip().lower()
+    if confirm == 'y':
+        manager = ProviderManager()
+        manager.remove_provider(provider)
+        return True
+    return False
+
+
+def interactive_delete_model(provider: str, model_name: str) -> bool:
+    """交互式删除模型"""
+    confirm = input(f"确定要删除模型 '{model_name}' 吗？(y/N): ").strip().lower()
+    if confirm == 'y':
+        manager = ProviderManager()
+        manager.remove_model(provider, model_name)
+        return True
+    return False
+
+
 def resolve_tool() -> str:
     """交互式选择工具"""
     tools = list_tools()
-    return pick_from_menu(tools, "请选择目标 AI Coding 工具:")
+    result, _ = pick_from_menu(tools, "请选择目标 AI Coding 工具:")
+    return result
 
 
-def resolve_provider(tool: str) -> str:
-    """交互式选择提供商"""
+def resolve_provider(tool: str) -> str | None:
+    """交互式选择提供商，返回 None 表示返回上级菜单"""
     providers = list_providers()
 
+    extra_options = [
+        "+ 添加新提供商",
+        "+ 编辑提供商配置",
+        "+ 删除提供商"
+    ]
+
     if not providers:
-        print("错误: 未找到任何提供商配置", file=sys.stderr)
-        print(f"请使用 'ai-config-cli.py add-provider' 命令添加提供商", file=sys.stderr)
-        raise ValueError("没有可用的提供商")
+        # 没有提供商时只显示添加选项
+        result, choice = pick_from_menu([], f"请选择 AI 服务提供商 (工具: {tool}):",
+                                        extra_options=["+ 添加新提供商"])
+        if "+ 添加新提供商" in result:
+            name = interactive_add_provider()
+            if name:
+                return name
+            return None
+        return None
 
-    return pick_from_menu(providers, f"请选择 AI 服务提供商 (工具: {tool}):", allow_open_folder=True, folder_path=CLAUDE_CODE_CONFIG_DIR)
+    result, choice = pick_from_menu(providers, f"请选择 AI 服务提供商 (工具: {tool}):",
+                                    allow_open_folder=True, folder_path=CLAUDE_CODE_CONFIG_DIR,
+                                    extra_options=extra_options)
+
+    if result == "+ 添加新提供商":
+        name = interactive_add_provider()
+        if name:
+            return name
+        return None
+    elif result == "+ 编辑提供商配置":
+        if providers:
+            # 让用户选择要编辑的提供商
+            selected, _ = pick_from_menu(providers, "选择要编辑的提供商:")
+            interactive_edit_provider(selected)
+        return None  # 返回重新选择
+    elif result == "+ 删除提供商":
+        if providers:
+            selected, _ = pick_from_menu(providers, "选择要删除的提供商:")
+            if interactive_delete_provider(selected):
+                return None  # 返回重新选择
+        return None
+
+    return result
 
 
-def resolve_model(provider: str) -> str:
-    """交互式选择模型"""
+def resolve_model(provider: str) -> str | None:
+    """交互式选择模型，返回 None 表示返回上级菜单"""
     models = list_models(provider)
 
+    extra_options = [
+        "+ 添加新模型",
+        "+ 编辑模型",
+        "+ 删除模型"
+    ]
+
     if not models:
-        print(f"错误: 提供商 '{provider}' 下没有配置任何模型", file=sys.stderr)
-        print(f"请使用 'ai-config-cli.py add-model {provider} <模型名>' 添加模型", file=sys.stderr)
-        raise ValueError(f"提供商 '{provider}' 没有可用的模型")
+        # 没有模型时只显示添加选项
+        result, _ = pick_from_menu([], f"请选择模型 (提供商: {provider}):",
+                                   extra_options=["+ 添加新模型"])
+        if "+ 添加新模型" in result:
+            interactive_add_model(provider)
+            # 添加后重新获取模型列表
+            models = list_models(provider)
+            if not models:
+                return None
 
     model_options = [f"{m['name']} ({m.get('alias', m['name'])})" for m in models]
-    selected = pick_from_menu(model_options, f"请选择模型 (提供商: {provider}):")
+
+    result, choice = pick_from_menu(model_options, f"请选择模型 (提供商: {provider}):",
+                                    extra_options=extra_options)
+
+    if result == "+ 添加新模型":
+        interactive_add_model(provider)
+        return None  # 返回重新选择
+    elif result == "+ 编辑模型":
+        if models:
+            selected, _ = pick_from_menu([f"{m['name']} ({m.get('alias', m['name'])})" for m in models],
+                                        "选择要编辑的模型:")
+            # 提取模型名称
+            model_name = selected.split(" ")[0]
+            # 让用户编辑别名
+            model_info = next((m for m in models if m["name"] == model_name), None)
+            if model_info:
+                new_alias = input(f"新别名 [{model_info.get('alias', model_name)}]: ").strip()
+                if new_alias:
+                    manager = ProviderManager()
+                    config = manager.get_provider_config(provider)
+                    for m in config.get("models", []):
+                        if m["name"] == model_name:
+                            m["alias"] = new_alias
+                            break
+                    manager._save_provider_config(provider, config)
+                    print("✓ 已更新别名")
+        return None
+    elif result == "+ 删除模型":
+        if models:
+            selected, _ = pick_from_menu([f"{m['name']} ({m.get('alias', m['name'])})" for m in models],
+                                        "选择要删除的模型:")
+            model_name = selected.split(" ")[0]
+            if interactive_delete_model(provider, model_name):
+                return None
+        return None
+
     # 提取模型名称
-    return selected.split(" ")[0]
+    return result.split(" ")[0]
 
 
 def resolve_config_file(config_arg: str | None, config_dir: Path) -> Path:
@@ -296,24 +487,26 @@ def main() -> int:
         else:
             tool = resolve_tool()
 
-        # 确定提供商
-        if args.provider:
-            providers = list_providers()
-            if args.provider not in providers:
-                raise ValueError(f"提供商 '{args.provider}' 不存在。可用: {', '.join(providers)}")
-            provider = args.provider
-        else:
-            provider = resolve_provider(tool)
+        # 确定提供商（可能需要多次选择，因为编辑后要重新选择）
+        while True:
+            provider = args.provider if args.provider else resolve_provider(tool)
+            if provider:
+                break
+            if not args.provider:
+                # 用户取消编辑，返回继续选择
+                continue
+            else:
+                raise ValueError("提供商不存在")
 
-        # 确定模型
-        if args.model:
-            models = list_models(provider)
-            model_names = [m["name"] for m in models]
-            if args.model not in model_names:
-                raise ValueError(f"模型 '{args.model}' 不存在。可用: {', '.join(model_names)}")
-            model_name = args.model
-        else:
-            model_name = resolve_model(provider)
+        # 确定模型（可能需要多次选择）
+        while True:
+            model_name = args.model if args.model else resolve_model(provider)
+            if model_name:
+                break
+            if not args.model:
+                continue
+            else:
+                raise ValueError("模型不存在")
 
         switch_config(provider=provider, model_name=model_name, dry_run=args.dry_run)
         return 0
