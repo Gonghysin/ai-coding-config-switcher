@@ -1,7 +1,10 @@
 {
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "permissions": {
     "allow": [
-      "WebSearch",
+      "Read",
       "WebFetch",
       "mcp__tavily__tavily_search",
       "mcp__tavily__tavily_extract",
@@ -15,7 +18,51 @@
       "mcp__zai-mcp-server__analyze_data_visualization",
       "mcp__zai-mcp-server__ui_diff_check",
       "mcp__zai-mcp-server__analyze_image",
-      "mcp__zai-mcp-server__analyze_video"
+      "mcp__zai-mcp-server__analyze_video",
+      "mcp__vision-mcp__summarize_image",
+      "mcp__vision-mcp__compare_images"
+    ]
+  },
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "terminal-notifier -title 'Claude Code' -message 'Claude 需要您的操作权限' -sound Crystal"
+          }
+        ]
+      },
+      {
+        "matcher": "idle_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "terminal-notifier -title 'Claude Code' -message '任务已完成，等待输入'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); FILE_LOWER=$(echo \"$FILE\" | tr '[:upper:]' '[:lower:]'); case \"$FILE_LOWER\" in *.png|*.jpg|*.jpeg|*.gif|*.webp|*.bmp|*.ico) echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"allow\\\",\\\"updatedInput\\\":{\\\"tool_name\\\":\\\"mcp__vision-mcp__summarize_image\\\",\\\"tool_input\\\":{\\\"image_url\\\":\\\"file://${FILE}\\\"}}}}\\\" ;; *) echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"allow\\\"}}\\\" ;; esac"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CMD=$(cat | jq -r '.tool_input.command // empty'); if echo \" $CMD \" | grep -qE 'rm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|-rf|-fr)\\b'; then echo \"BLOCKED: rm -rf commands are not allowed. Use 'trash' or 'mv ~/.Trash/' instead.\" >&2; exit 2; fi; echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}'"
+          }
+        ]
+      }
     ]
   }
 }

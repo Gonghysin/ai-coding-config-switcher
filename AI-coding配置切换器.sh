@@ -4,6 +4,9 @@ set -euo pipefail
 # 获取脚本所在目录（项目根目录）
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# 保存用户调用时的工作目录，供 Python 脚本用于项目级配置路径解析
+export CALLER_DIR="$PWD"
+
 cd "$PROJECT_DIR"
 
 if ! command -v uv >/dev/null 2>&1; then
