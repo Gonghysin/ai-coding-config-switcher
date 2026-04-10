@@ -4,7 +4,8 @@
     "backup_file": "configs/claude_code/settings.json.bak"
   },
   "codex": {
-    "target_file": "/Users/YOUR_USERNAME/.codex/config.json",
-    "backup_file": "configs/codex/config.json.bak"
+    "target_file": "/Users/YOUR_USERNAME/.codex/config.toml",
+    "auth_file": "/Users/YOUR_USERNAME/.codex/auth.json",
+    "backup_file": "configs/codex/config.toml.bak"
   }
 }

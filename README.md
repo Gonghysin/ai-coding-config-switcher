@@ -1,6 +1,6 @@
 # AI Coding 配置切换器
 
-一个用于快速切换不同 AI Coding 工具配置的命令行工具，支持 Claude Code、OpenCode 等多种工具。
+一个用于快速切换不同 AI Coding 工具配置的命令行工具，支持 Claude Code、OpenCode、Codex。
 
 ## 功能特性
 
@@ -15,8 +15,8 @@
 ## 支持的工具
 
 - **Claude Code** - Anthropic 官方 CLI 工具
-- **OpenCode** - 开源 AI 编码 CLI 工具（计划支持）
-- **Codex** - OpenAI Codex（计划支持）
+- **OpenCode** - 开源 AI 编码 CLI 工具
+- **Codex** - OpenAI Codex CLI
 
 ## 项目目录结构
 
@@ -83,6 +83,7 @@ chmod +x AI-coding配置切换器.sh
 ## 管理命令
 
 本工具提供 `ai-config-cli.py` 用于管理提供商和模型配置。
+目前 `ai-config-cli.py` 主要管理 `configs/claude_code` 目录；`codex` / `opencode` 建议使用 `switch_ai_config.py` 的交互式管理流程。
 
 ### 添加提供商
 
@@ -183,11 +184,25 @@ uv run python switch_ai_config.py -p minimax -m MiniMax-M2.5-highspeed --dry-run
 
 | 参数 | 说明 |
 |------|------|
+| `-t, --tool` | 工具名称：`claude code` / `opencode` / `codex` |
 | `-p, --provider` | AI 服务提供商名称 |
 | `-m, --model` | 模型名称 |
 | `--list-providers` | 列出所有可用的提供商 |
 | `--list-models <name>` | 列出指定提供商下的所有模型 |
 | `--dry-run` | 只展示操作，不写入文件 |
+
+## Codex 说明
+
+- Codex 当前用户级主配置文件是 `~/.codex/config.toml`
+- Codex 当前也支持项目级配置文件 `.codex/config.toml`，项目级优先于系统级
+- 使用 OpenAI API Key 登录时，认证信息存放在 `~/.codex/auth.json`
+- 本项目中的 `configs/codex/<provider>/config.json` 是“提供商模板”，不是 Codex 的真实目标配置文件
+- Codex 提供商配置支持 `auth_mode`
+- `openai`：切换时写入所选 scope 的 `config.toml`，并把选中的 OpenAI API Key 同步到 `~/.codex/auth.json`
+- `bearer_token`：切换时写入所选 scope 的 `config.toml` 的 `experimental_bearer_token`，适合第三方 provider 自有 token
+- 如果 `auth_mode = "openai"` 且 provider 配置里未保存 API Key，切换器会保留现有 `~/.codex/auth.json` 登录态不变
+- 选择 Codex 项目级配置时，写入目标是当前目录下的 `.codex/config.toml`
+- 注意：即使选择项目级配置，`auth.json` 仍然是用户级文件 `~/.codex/auth.json`
 
 ## 完整示例：添加 MiniMax 提供商
 
@@ -221,7 +236,11 @@ uv run python switch_ai_config.py -p minimax -m MiniMax-M2.5-highspeed
 
 ### Q: 提供商配置文件在哪里？
 
-A: 每个提供商的配置位于 `configs/claude_code/{provider_name}/config.json`
+A: 每个提供商的配置位于 `configs/{tool}/{provider_name}/config.json`。其中 Codex 的真实目标文件是 `~/.codex/config.toml`，认证文件是 `~/.codex/auth.json`。
+
+### Q: Codex 的项目级配置文件在哪里？
+
+A: 位于当前目录下的 `.codex/config.toml`。当它存在时，会优先于系统级 `~/.codex/config.toml` 生效。
 
 ### Q: 如何查看所有提供商？
 
@@ -229,7 +248,7 @@ A: 使用 `uv run python ai-config-cli.py list` 或 `uv run python switch_ai_con
 
 ### Q: 如何恢复之前的配置？
 
-A: 备份文件保存在 `configs/claude_code/{provider}/settings.json.bak`
+A: 备份文件保存在 `configs/{tool}/{provider}/settings.{scope}.bak`。Codex 在 `openai` 模式下还会额外备份 `configs/codex/{provider}/auth.{scope}.bak`。
 
 ## 许可证
 
